@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣 3D 空氣品質地圖 (AQI)</title>
+    
+    <script src="https://unpkg.com/maplibre-gl@3.0.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.0.0/dist/maplibre-gl.css" rel="stylesheet" />
+
+    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #111; color: white; }
+        #container { width: 100vw; height: 100vh; position: relative; }
+        
+        /* 資訊面板樣式 */
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            pointer-events: none; /* 讓滑鼠可以穿透面板操作地圖 */
+            max-width: 300px;
+            border: 1px solid #333;
+        }
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; color: #4db6ac; }
+        p { margin: 5px 0; font-size: 0.9rem; color: #ccc; }
+        .legend { display: flex; align-items: center; margin-top: 10px; font-size: 0.8rem; }
+        .color-box { width: 12px; height: 12px; margin-right: 5px; display: inline-block; }
+        
+        /* Tooltip 樣式 */
+        #tooltip {
+            position: absolute;
+            z-index: 2;
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="info-panel">
+        <h1>台灣空氣品質 3D 觀測</h1>
+        <p>資料來源：環境部 (MOENV)</p>
+        <p>高度代表 AQI 數值，顏色代表嚴重程度。</p>
+        <p>按住 <b>Ctrl + 滑鼠左鍵</b> 或是 <b>滑鼠右鍵</b> 可以旋轉 3D 視角。</p>
+        
+        <div style="margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
+            <div class="legend"><span class="color-box" style="background:rgb(0, 228, 0)"></span> 良好 (0-50)</div>
+            <div class="legend"><span class="color-box" style="background:rgb(255, 255, 0)"></span> 普通 (51-100)</div>
+            <div class="legend"><span class="color-box" style="background:rgb(255, 126, 0)"></span> 對敏感族群不健康 (101-150)</div>
+            <div class="legend"><span class="color-box" style="background:rgb(255, 0, 0)"></span> 不健康 (>150)</div>
+        </div>
+    </div>
+    <div id="tooltip"></div>
+</div>
+
+<script>
+    // 1. 設定 API URL (強制使用 JSON 格式)
+    const API_URL = "https://data.moenv.gov.tw/api/v2/aqx_p_432?api_key=b7df779e-71a6-4148-8379-5afbd441d803&limit=1000&sort=ImportDate%20desc&format=JSON";
+
+    // 2. 定義 AQI 顏色邏輯 (RGB)
+    function getAQIColor(aqi) {
+        if (aqi <= 50) return [0, 228, 0]; // 綠
+        if (aqi <= 100) return [255, 255, 0]; // 黃
+        if (aqi <= 150) return [255, 126, 0]; // 橘
+        if (aqi <= 200) return [255, 0, 0]; // 紅
+        if (aqi <= 300) return [143, 63, 151]; // 紫
+        return [126, 0, 35]; // 褐
+    }
+
+    // 3. 初始化 DeckGL
+    const {DeckGL, ColumnLayer} = deck;
+
+    const deckgl = new DeckGL({
+        container: 'container',
+        // 設定初始地圖視角 (中心點設在台灣中部)
+        initialViewState: {
+            longitude: 120.7,
+            latitude: 23.7,
+            zoom: 7.5,
+            pitch: 45, // 傾斜角度，產生 3D 感
+            bearing: 0 // 旋轉角度
+        },
+        controller: true,
+        // 使用 MapLibre 作為底圖 (使用 Carto 的深色地圖風格，很有科技感)
+        mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+        layers: []
+    });
+
+    // 4. 抓取資料並更新圖層
+    async function fetchData() {
+        try {
+            const response = await fetch(API_URL);
+            const json = await response.json();
+            const data = json.records;
+
+            // 清理資料：確保有經緯度且 AQI 為數字
+            const cleanData = data.filter(d => d.longitude && d.latitude && d.aqi)
+                                  .map(d => ({
+                                      name: d.sitename,
+                                      county: d.county,
+                                      aqi: parseInt(d.aqi),
+                                      status: d.status,
+                                      pm25: d.['pm2.5'],
+                                      coords: [parseFloat(d.longitude), parseFloat(d.latitude)]
+                                  }));
+
+            renderLayer(cleanData);
+        } catch (error) {
+            console.error("資料載入失敗:", error);
+            alert("無法讀取空氣品質資料，請稍後再試。");
+        }
+    }
+
+    // 5. 繪製 3D 柱狀圖層
+    function renderLayer(data) {
+        const layer = new ColumnLayer({
+            id: 'aqi-columns',
+            data: data,
+            diskResolution: 12,
+            radius: 2000, // 柱子半徑 (公尺)
+            extruded: true,
+            pickable: true, // 允許滑鼠互動
+            elevationScale: 100, // 高度縮放比例
+            getPosition: d => d.coords,
+            getFillColor: d => getAQIColor(d.aqi),
+            getElevation: d => d.aqi, // 高度由 AQI 決定
+            
+            // 滑鼠互動效果
+            onHover: info => {
+                const tooltip = document.getElementById('tooltip');
+                if (info.object) {
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = info.x + 'px';
+                    tooltip.style.top = info.y + 'px';
+                    tooltip.innerHTML = `
+                        <strong>${info.object.county} - ${info.object.name}</strong><br>
+                        AQI: ${info.object.aqi} (${info.object.status})<br>
+                        PM2.5: ${info.object.pm25}
+                    `;
+                } else {
+                    tooltip.style.display = 'none';
+                }
+            }
+        });
+
+        deckgl.setProps({ layers: [layer] });
+    }
+
+    // 啟動程式
+    fetchData();
+
+</script>
+</body>
+</html>
