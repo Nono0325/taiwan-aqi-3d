@@ -67,7 +67,7 @@
 </div>
 
 <script>
-    // 1. 設定 API URL (強制使用 JSON 格式)
+    // 1. 設定 API URL
     const API_URL = "https://data.moenv.gov.tw/api/v2/aqx_p_432?api_key=b7df779e-71a6-4148-8379-5afbd441d803&limit=1000&sort=ImportDate%20desc&format=JSON";
 
     // 2. 定義 AQI 顏色邏輯 (RGB)
@@ -85,16 +85,15 @@
 
     const deckgl = new DeckGL({
         container: 'container',
-        // 設定初始地圖視角 (中心點設在台灣中部)
         initialViewState: {
             longitude: 120.7,
             latitude: 23.7,
             zoom: 7.5,
-            pitch: 45, // 傾斜角度，產生 3D 感
-            bearing: 0 // 旋轉角度
+            pitch: 45,
+            bearing: 0
         },
         controller: true,
-        // 使用 MapLibre 作為底圖 (使用 Carto 的深色地圖風格，很有科技感)
+        // 使用 Carto 的深色底圖
         mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
         layers: []
     });
@@ -106,21 +105,22 @@
             const json = await response.json();
             const data = json.records;
 
-            // 清理資料：確保有經緯度且 AQI 為數字
+            // 清理資料
             const cleanData = data.filter(d => d.longitude && d.latitude && d.aqi)
                                   .map(d => ({
                                       name: d.sitename,
                                       county: d.county,
                                       aqi: parseInt(d.aqi),
                                       status: d.status,
-                                      pm25: d.['pm2.5'],
+                                      // 修正處：這裡原本多了一個點，已修正
+                                      pm25: d['pm2.5'],
                                       coords: [parseFloat(d.longitude), parseFloat(d.latitude)]
                                   }));
 
             renderLayer(cleanData);
         } catch (error) {
             console.error("資料載入失敗:", error);
-            alert("無法讀取空氣品質資料，請稍後再試。");
+            // 可以在這裡加入 fallback 或是錯誤提示
         }
     }
 
@@ -130,15 +130,14 @@
             id: 'aqi-columns',
             data: data,
             diskResolution: 12,
-            radius: 2000, // 柱子半徑 (公尺)
+            radius: 2000,
             extruded: true,
-            pickable: true, // 允許滑鼠互動
-            elevationScale: 100, // 高度縮放比例
+            pickable: true,
+            elevationScale: 100,
             getPosition: d => d.coords,
             getFillColor: d => getAQIColor(d.aqi),
-            getElevation: d => d.aqi, // 高度由 AQI 決定
+            getElevation: d => d.aqi,
             
-            // 滑鼠互動效果
             onHover: info => {
                 const tooltip = document.getElementById('tooltip');
                 if (info.object) {
@@ -159,9 +158,7 @@
         deckgl.setProps({ layers: [layer] });
     }
 
-    // 啟動程式
     fetchData();
-
 </script>
 </body>
 </html>
