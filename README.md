@@ -2,7 +2,7 @@
 
 這是一個基於 Web 的 3D 互動地圖，用於即時視覺化台灣各地的空氣品質指標 (AQI)。透過 3D 柱狀圖的高度與顏色，讓使用者能直觀地感受目前的空氣污染程度。
 
-[👉 點擊這裡查看 Demo (請替換成您的 GitHub Pages 連結)](https://www.google.com/search?q=https://your-username.github.io/repo-name/)
+[👉 點擊這裡查看 Demo ](https://nono0325.github.io/taiwan-aqi-3d/)
 
 ## ✨ 特色 (Features)
 
